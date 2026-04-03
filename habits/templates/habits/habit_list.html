@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Habits</title>
+</head>
+<body>
+    <h1>My Habits</h1>
+    <ul>
+        {% for habit in habits %}
+            <li>{{ habit.name }} - {{ habit.get_category_display }}</li>
+        {% empty %}
+            <li>No habits yet</li>
+        {% endfor %}
+    </ul>
+    <a href="{% url 'create_habit' %}">Create new habit</a>
+</body>
+</html>

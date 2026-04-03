@@ -1,0 +1,15 @@
+# Dev PostgreSQL — совпадает с backend/settings.py (POSTGRES_* по умолчанию)
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: habits
+      POSTGRES_USER: habits
+      POSTGRES_PASSWORD: habits
+    ports:
+      - "5432:5432"
+    volumes:
+      - habits_pgdata:/var/lib/postgresql/data
+
+volumes:
+  habits_pgdata:

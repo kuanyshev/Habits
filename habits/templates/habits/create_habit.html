@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Create Habit</title>
+</head>
+<body>
+    <h1>Create Habit</h1>
+    <form method="POST">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Save Habit</button>
+    </form>
+    <a href="{% url 'habit_list' %}">Back to list</a>
+</body>
+</html>

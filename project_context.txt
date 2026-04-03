@@ -1,0 +1,172 @@
+================================================================================
+Habits / SCOPOS — контекст проекта (Django + React)
+Обновлено: для работы AI-агентов без догадок по структуре и API.
+================================================================================
+
+1. СТРУКТУРА ПРОЕКТА (без node_modules, venv, __pycache__)
+--------------------------------------------------------------------------------
+Habits/
+├── manage.py
+├── requirements.txt
+├── docker-compose.yml          # PostgreSQL для локальной разработки
+├── db.sqlite3                  # может присутствовать; в settings используется PostgreSQL
+├── README.md, FRONTEND.md
+├── backend/                    # Django project package
+│   ├── settings.py
+│   ├── urls.py
+│   ├── wsgi.py, asgi.py
+├── users/                      # кастомный пользователь + API регистрации/логина
+│   ├── models.py
+│   ├── serializers.py
+│   ├── views.py
+│   ├── admin.py
+│   └── migrations/
+├── habits/                     # привычки: шаблоны Django + REST API для React
+│   ├── models.py
+│   ├── views.py
+│   ├── urls.py
+│   ├── forms.py
+│   ├── admin.py
+│   ├── templates/habits/       # habit_list.html, create_habit.html
+│   └── migrations/
+└── frontend/                   # CRA (react-scripts)
+    ├── package.json            # proxy → Django :8000
+    ├── public/
+    └── src/
+        ├── index.js, index.css, App.js, api.js
+        ├── assets/             # png: logo, mascot, skins, google, …
+        ├── components/IntroAnimation/
+        └── pages/              # см. раздел 7
+
+Исключено из дерева: frontend/node_modules, venv, **/__pycache__.
+Артефакт сборки: frontend/build/ (статика после npm run build).
+
+
+2. DJANGO APPS (INSTALLED_APPS)
+--------------------------------------------------------------------------------
+- django.contrib.* (admin, auth, contenttypes, sessions, messages, staticfiles)
+- rest_framework
+- corsheaders
+- users          — AUTH_USER_MODEL = users.User
+- habits         — модель Habit, шаблоны, API привычек
+
+
+3. ENDPOINTS (urls.py)
+--------------------------------------------------------------------------------
+Корень backend/urls.py:
+  GET  /                         → редирект на /habits/
+  *    /admin/                   → Django Admin
+  *    /habits/                  → include habits.urls
+
+  POST /api/auth/register/     → RegisterView (создание пользователя)
+  POST /api/auth/login/        → LoginView (JWT access + refresh + user в теле)
+  POST /api/auth/token/refresh/ → TokenRefreshView (SimpleJWT)
+  GET  /api/auth/me/           → MeView (текущий пользователь, JWT)
+
+habits/urls.py (префикс уже /habits/…):
+  GET  /habits/                 → habit_list (HTML, session + @login_required)
+  *    /habits/create/          → create_habit (HTML)
+  GET  /habits/api/habits/      → api_habits (JSON, список привычек)
+  POST /habits/api/habits/      → api_habits (JSON, создание)
+  PATCH /habits/api/habits/<id>/ → api_habit_detail (JSON, частичное обновление)
+
+
+4. МОДЕЛИ (models.py)
+--------------------------------------------------------------------------------
+users.User (AbstractUser):
+  - стандартные поля User + xp, level (int), created_at
+  - используется как AUTH_USER_MODEL
+
+habits.Habit:
+  - user → FK User
+  - name, description
+  - category: choices sport | health | study
+  - category_label: строка для отображения/маппинга с фронта
+  - start_date, end_date (DateField, optional)
+  - xp, xp_max, level, status
+  - created_at
+
+
+5. VIEWS И API (кратко)
+--------------------------------------------------------------------------------
+users/views.py:
+  - RegisterView: CreateAPIView, AllowAny, RegisterSerializer
+  - LoginView: TokenObtainPairView + CustomTokenObtainPairSerializer
+    (в JWT кладутся username, xp, level; в ответе validate — объект user)
+  - MeView: RetrieveAPIView, UserSerializer, объект = request.user
+
+habits/views.py:
+  - create_habit, habit_list: классические Django views, login_required, HTML
+  - api_habits: DRF @api_view GET|POST, IsAuthenticated
+    GET: { "habits": [ {..._habit_to_dict...} ] }
+    POST: тело JSON (name/habitName, category, даты, xp и т.д.); маппинг
+          «человеческих» категорий → sport/health/study
+  - api_habit_detail: PATCH, IsAuthenticated, только свои привычки
+
+
+6. АВТОРИЗАЦИЯ
+--------------------------------------------------------------------------------
+- API: JWT (djangorestframework-simplejwt).
+  Заголовок: Authorization: Bearer <access>
+- Хранение на фронте: localStorage accessToken, refreshToken
+- Обновление access: POST /api/auth/token/refresh/ с телом { "refresh": "..." }
+- REST_FRAMEWORK: DEFAULT_AUTHENTICATION = JWTAuthentication;
+  DEFAULT_PERMISSION = IsAuthenticated (переопределяется AllowAny на register/login)
+- Классические страницы /habits/* используют сессию + @login_required (отдельно от React)
+- CORS: corsheaders; в DEBUG — CORS_ALLOW_ALL_ORIGINS = True
+- SIMPLE_JWT: access ~60 мин, refresh ~7 дней (см. settings.py)
+
+
+7. REACT — ГДЕ КОД
+--------------------------------------------------------------------------------
+Точка входа: frontend/src/index.js → App.js
+
+Маршруты (react-router-dom v7): только в App.js
+  / → Login
+  /welcome, /profile-setup, /character, /dashboard → RequireAuth (нужен accessToken в localStorage)
+
+Страницы с маршрутами: Login, Welcome, ProfileSetup, CharacterSelect, Dashboard.
+
+Вложенные в Dashboard (импорт из Dashboard.jsx): Settings, AddNew, Tasks, Statistics, Community.
+
+Отдельные файлы-страницы без маршрута в App.js (пока не подключены к роутеру):
+  Friends.jsx, Publication.jsx, Progress.jsx, Notifications.jsx — локальный UI / localStorage, заготовки.
+
+Компоненты: frontend/src/components/IntroAnimation/
+
+Стили: рядом с страницами (*.css), index.css
+
+
+8. ЗАПРОСЫ С FRONTEND
+--------------------------------------------------------------------------------
+- Библиотека: нативный fetch (axios не используется).
+- Обёртка: frontend/src/api.js
+  - url(): база REACT_APP_API_URL или "" (относительные пути)
+  - fetchJson, postPublic (логин/регистрация без старого Bearer)
+  - loginRequest, registerRequest, fetchMe, fetchHabits, createHabitOnServer,
+    patchHabitOnServer, mapServerHabitToLocal, clearAuth
+  - при 401: попытка refresh, затем повтор запроса
+- В dev: package.json "proxy": "http://127.0.0.1:8000" — запросы к /api/… и /habits/… проксируются на Django
+
+
+9. UI «ЧАТА»
+--------------------------------------------------------------------------------
+- В Tasks.jsx: блок «AI» — список сообщений (aiMessages), поле ввода (aiInput),
+  кнопка «Generate with AI», классы tasks-ai-*. Это UI-макет под чат с ассистентом.
+- Отдельного бэкенд-API для чата нет; ответы сейчас формируются локально в handleGenerateAi
+  (имитация, не вызов модели).
+
+
+10. AI ФУНКЦИОНАЛЬНОСТЬ
+--------------------------------------------------------------------------------
+- Сервер: нет эндпоинтов OpenAI/LLM и нет интеграции с внешним AI.
+- Клиент: только UI и локальная логика в Tasks.jsx (псевдо-ответы при нажатии Generate).
+
+
+================================================================================
+БАЗА ДАННЫХ
+================================================================================
+- В production-настройках: PostgreSQL (ENGINE postgresql, БД habits по умолчанию).
+- Локально: поднять БД через `docker compose up -d` в корне репозитория, затем
+  `python manage.py migrate`.
+- SQLite в репозитории (db.sqlite3) не является целевой БД при текущем settings.
