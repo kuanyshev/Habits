@@ -119,10 +119,10 @@ export default function UserProfile({ userId, onBack, onChanged }) {
       <div className="community-profile-card">
         <div className="community-post-user">
           <div className="community-avatar-circle">
-            {(profile.username || "?").charAt(0).toUpperCase()}
+            {(profile.nickname || profile.username || "?").charAt(0).toUpperCase()}
           </div>
           <div>
-            <strong>{profile.username}</strong>
+            <strong>{profile.nickname || profile.username}</strong>
             {profile.email ? <p className="profile-email">{profile.email}</p> : null}
             <p>
               Level {profile.level} · XP {profile.xp}

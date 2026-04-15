@@ -32,6 +32,7 @@ def _profile_payload(viewer, target):
     return {
         "id": target.id,
         "username": target.username,
+        "nickname": getattr(target, "nickname", "") or target.username,
         "xp": target.xp,
         "level": target.level,
         "date_joined": target.date_joined.isoformat() if target.date_joined else None,
@@ -44,18 +45,25 @@ def _profile_payload(viewer, target):
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-def search_by_email(request):
-    email = (request.query_params.get("email") or "").strip().lower()
-    if not email:
-        return Response({"error": "email query required"}, status=400)
-    if "@" not in email:
-        return Response({"error": "invalid email"}, status=400)
+def search_by_nickname(request):
+    nick = (request.query_params.get("nickname") or "").strip()
+    email_q = (request.query_params.get("email") or "").strip()
 
-    user = (
-        User.objects.filter(email__iexact=email)
-        .exclude(pk=request.user.pk)
-        .first()
-    )
+    user = None
+    if nick:
+        user = (
+            User.objects.filter(nickname__iexact=nick)
+            .exclude(pk=request.user.pk)
+            .first()
+        )
+    elif email_q and "@" in email_q:
+        user = (
+            User.objects.filter(email__iexact=email_q.lower())
+            .exclude(pk=request.user.pk)
+            .first()
+        )
+    else:
+        return Response({"error": "nickname query required"}, status=400)
     if not user:
         return Response({"found": False})
 
@@ -103,13 +111,14 @@ def unsubscribe(request, user_id):
 @permission_classes([IsAuthenticated])
 def list_friends(request):
     ids = _mutual_friend_ids(request.user)
-    users = User.objects.filter(pk__in=ids).order_by("username")
+    users = User.objects.filter(pk__in=ids).order_by("nickname", "username")
     return Response(
         {
             "friends": [
                 {
                     "id": u.id,
                     "username": u.username,
+                    "nickname": getattr(u, "nickname", "") or u.username,
                     "xp": u.xp,
                     "level": u.level,
                 }
@@ -150,6 +159,7 @@ def _serialize_posts(qs):
             "created_at": p.created_at.isoformat(),
             "author_id": p.author_id,
             "author_username": p.author.username,
+            "author_nickname": getattr(p.author, "nickname", "") or p.author.username,
         }
         for p in qs
     ]
@@ -210,6 +220,7 @@ def posts_feed(request):
             "created_at": post.created_at.isoformat(),
             "author_id": post.author_id,
             "author_username": post.author.username,
+            "author_nickname": getattr(post.author, "nickname", "") or post.author.username,
         },
         status=201,
     )

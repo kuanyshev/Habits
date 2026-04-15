@@ -3,7 +3,7 @@ import "./Dashboard.css";
 import Friends from "./Friends";
 import UserProfile from "./UserProfile";
 import {
-  communitySearchByEmail,
+  communitySearchByNickname,
   communitySubscribe,
   communityUnsubscribe,
   communityFetchPosts,
@@ -15,7 +15,7 @@ export default function Community() {
   const [subView, setSubView] = useState("feed");
   const [profileUserId, setProfileUserId] = useState(null);
 
-  const [searchEmail, setSearchEmail] = useState("");
+  const [searchNickname, setSearchNickname] = useState("");
   const [searchUser, setSearchUser] = useState(null);
   const [searchFound, setSearchFound] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -72,9 +72,9 @@ export default function Community() {
   }, [myUserId]);
 
   const runSearch = async () => {
-    const email = searchEmail.trim();
-    if (!email) {
-      setSearchError("Enter an email");
+    const q = searchNickname.trim();
+    if (!q) {
+      setSearchError("Enter a nickname");
       return;
     }
     if (!localStorage.getItem("accessToken")) {
@@ -86,7 +86,7 @@ export default function Community() {
     setSearchUser(null);
     setSearchFound(null);
     try {
-      const data = await communitySearchByEmail(email);
+      const data = await communitySearchByNickname(q);
       if (!data.found) {
         setSearchFound(false);
       } else {
@@ -161,7 +161,7 @@ export default function Community() {
         onChanged={() => {
           loadPosts();
           if (searchUser && String(searchUser.id) === String(profileUserId)) {
-            communitySearchByEmail(searchEmail.trim())
+            communitySearchByNickname(searchNickname.trim())
               .then((d) => {
                 if (d.found) setSearchUser(d.user);
               })
@@ -177,11 +177,11 @@ export default function Community() {
       <div className="community-header">
         <div className="community-search-block">
           <input
-            type="email"
-            placeholder="Find user by email"
+            type="text"
+            placeholder="Find user by nickname"
             className="community-search"
-            value={searchEmail}
-            onChange={(e) => setSearchEmail(e.target.value)}
+            value={searchNickname}
+            onChange={(e) => setSearchNickname(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && runSearch()}
           />
           <button
@@ -206,17 +206,17 @@ export default function Community() {
 
       {searchError ? <p className="community-error-text">{searchError}</p> : null}
       {searchFound === false ? (
-        <p className="community-hint">No user with this email.</p>
+        <p className="community-hint">No user with this nickname.</p>
       ) : null}
 
       {searchUser ? (
         <div className="community-user-search-card">
           <div className="community-post-user">
             <div className="community-avatar-circle">
-              {(searchUser.username || "?").charAt(0).toUpperCase()}
+              {(searchUser.nickname || searchUser.username || "?").charAt(0).toUpperCase()}
             </div>
             <div>
-              <strong>{searchUser.username}</strong>
+              <strong>{searchUser.nickname || searchUser.username}</strong>
               <p>
                 Level {searchUser.level} · XP {searchUser.xp}
               </p>
@@ -313,7 +313,7 @@ export default function Community() {
               className="post-author-link"
               onClick={() => openProfile(post.author_id)}
             >
-              <strong>{post.author_username}</strong>
+              <strong>{post.author_nickname || post.author_username}</strong>
             </button>
             <p>{post.text}</p>
             <small className="post-meta">

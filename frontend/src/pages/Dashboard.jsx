@@ -1,69 +1,83 @@
 import "./Dashboard.css";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import logo from "../assets/logo.png";
 import mascot from "../assets/mascot.png";
-import Settings from "./Settings";
 import AddNew from "./AddNew";
 import Tasks from "./Tasks";
 import Statistics from "./Statistics";
 import Community from "./Community";
+import AppSettings from "./AppSettings";
+import ProfileSettings from "./ProfileSettings";
+import { useNavigate } from "react-router-dom";
 import {
   clearAuth,
   fetchHabits,
+  fetchMe,
   habitStorageKey,
   patchHabitOnServer,
 } from "../api";
+import { readStoredJson, t } from "../utils/appSettings";
+
+function getDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [, setCommunityView] = useState("feed");
-  const [userName] = useState(localStorage.getItem("userName") || "Togzhan");
-  const [avatar] = useState(localStorage.getItem("userAvatar") || "");
+  const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
+
+  const [userName, setUserName] = useState(() => {
+    const savedUserName = localStorage.getItem("userName");
+    const savedUser = readStoredJson("user", {});
+    return (
+      savedUserName ||
+      savedUser.nickname ||
+      savedUser.username ||
+      "Togzhan"
+    );
+  });
+
+  const [avatar, setAvatar] = useState(localStorage.getItem("userAvatar") || "");
   const [createdHabits, setCreatedHabits] = useState([]);
   const [activeHabitId, setActiveHabitId] = useState(
-    localStorage.getItem(habitStorageKey("activeHabitId")) || ""
+    () => localStorage.getItem(habitStorageKey("activeHabitId")) || ""
   );
   const [tasksByHabitDate, setTasksByHabitDate] = useState({});
 
+  const text = t();
+
+  const handleLogout = () => {
+    clearAuth();
+    navigate("/", { replace: true });
+  };
+
   useEffect(() => {
-    const loadDashboardData = () => {
-      const habits =
-        JSON.parse(localStorage.getItem(habitStorageKey("createdHabits"))) || [];
-      const tasks =
-        JSON.parse(localStorage.getItem(habitStorageKey("tasksByHabitDate"))) ||
-        {};
-      const savedActiveId =
-        localStorage.getItem(habitStorageKey("activeHabitId")) || "";
+    const load = () => {
+      const savedUserName = localStorage.getItem("userName");
+      const savedUser = readStoredJson("user", {});
 
-      setCreatedHabits(habits);
-      setTasksByHabitDate(tasks);
-
-      if (habits.length > 0) {
-        const validHabit = habits.find((habit) => habit.id === savedActiveId);
-
-        if (validHabit) {
-          setActiveHabitId(savedActiveId);
-        } else {
-          localStorage.setItem(habitStorageKey("activeHabitId"), habits[0].id);
-          setActiveHabitId(habits[0].id);
-        }
-      } else {
-        setActiveHabitId("");
-      }
+      setCreatedHabits(readStoredJson(habitStorageKey("createdHabits"), []));
+      setTasksByHabitDate(readStoredJson(habitStorageKey("tasksByHabitDate"), {}));
+      setUserName(
+        savedUserName || savedUser.nickname || savedUser.username || "Togzhan"
+      );
+      setAvatar(localStorage.getItem("userAvatar") || "");
+      setActiveHabitId(localStorage.getItem(habitStorageKey("activeHabitId")) || "");
     };
 
-    loadDashboardData();
-
-    window.addEventListener("habitsUpdated", loadDashboardData);
-    window.addEventListener("tasksUpdated", loadDashboardData);
-    window.addEventListener("storage", loadDashboardData);
+    load();
+    window.addEventListener("storage", load);
+    window.addEventListener("habitsUpdated", load);
+    window.addEventListener("tasksUpdated", load);
 
     return () => {
-      window.removeEventListener("habitsUpdated", loadDashboardData);
-      window.removeEventListener("tasksUpdated", loadDashboardData);
-      window.removeEventListener("storage", loadDashboardData);
+      window.removeEventListener("storage", load);
+      window.removeEventListener("habitsUpdated", load);
+      window.removeEventListener("tasksUpdated", load);
     };
   }, [activeTab]);
 
@@ -81,12 +95,12 @@ export default function Dashboard() {
         setCreatedHabits(habits);
         const savedActiveId =
           localStorage.getItem(habitStorageKey("activeHabitId")) || "";
-        const valid = habits.find((h) => h.id === savedActiveId);
+        const valid = habits.find((h) => String(h.id) === String(savedActiveId));
         if (valid) {
-          setActiveHabitId(savedActiveId);
+          setActiveHabitId(String(savedActiveId));
         } else {
           localStorage.setItem(habitStorageKey("activeHabitId"), habits[0].id);
-          setActiveHabitId(habits[0].id);
+          setActiveHabitId(String(habits[0].id));
         }
         window.dispatchEvent(new Event("habitsUpdated"));
       } catch (e) {
@@ -98,25 +112,37 @@ export default function Dashboard() {
     };
   }, []);
 
-  const getDateKey = (date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
+  useEffect(() => {
+    if (!localStorage.getItem("accessToken")) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const u = await fetchMe();
+        if (cancelled || !u) return;
+        const name = u.nickname || u.username;
+        if (!name) return;
+        localStorage.setItem("userName", name);
+        localStorage.setItem("user", JSON.stringify(u));
+        setUserName(name);
+      } catch {
+        /* offline / expired */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const todayKey = getDateKey(new Date());
 
   const activeHabit =
-    createdHabits.find((habit) => habit.id === activeHabitId) || createdHabits[0];
+    createdHabits.find((h) => String(h.id) === String(activeHabitId)) ||
+    createdHabits[0];
 
-  const otherGoals = createdHabits.filter((habit) => habit.id !== activeHabit?.id);
   const todayTasks = useMemo(() => {
     if (!activeHabit) return [];
-
-    const todayList = ((tasksByHabitDate[activeHabit.id] || {})[todayKey] || []).slice();
-
-    return todayList.sort((a, b) => {
+    const list = (tasksByHabitDate?.[activeHabit.id]?.[todayKey] || []).slice();
+    return list.sort((a, b) => {
       const aTime = a.startTime || a.time || "";
       const bTime = b.startTime || b.time || "";
       return aTime.localeCompare(bTime);
@@ -126,11 +152,9 @@ export default function Dashboard() {
   const totalCompletedTasks = useMemo(() => {
     if (!activeHabit) return 0;
 
-    const habitTasks = tasksByHabitDate[activeHabit.id] || {};
     let count = 0;
-
-    Object.values(habitTasks).forEach((dayTasks) => {
-      dayTasks.forEach((task) => {
+    Object.values(tasksByHabitDate?.[activeHabit.id] || {}).forEach((day) => {
+      day.forEach((task) => {
         if (task.completed) count += 1;
       });
     });
@@ -138,38 +162,54 @@ export default function Dashboard() {
     return count;
   }, [tasksByHabitDate, activeHabit]);
 
-  const daysProgress = useMemo(() => {
-    if (!activeHabit) return { doneDays: 0, totalDays: 21 };
+  const otherHabits = useMemo(() => {
+    if (!activeHabit) return createdHabits;
+    return createdHabits.filter(
+      (habit) => String(habit.id) !== String(activeHabit.id)
+    );
+  }, [createdHabits, activeHabit]);
 
-    const start = new Date(activeHabit.startDate);
-    const end = new Date(activeHabit.endDate);
+  const currentHabitProgress = useMemo(() => {
+    if (!activeHabit) return 0;
 
-    const total =
-      Math.max(
-        1,
-        Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1
-      ) || 21;
+    const xpMax = Number(activeHabit.xpMax || 1000);
+    const xp = Number(activeHabit.xp || 0);
+    if (xpMax <= 0) return 0;
 
-    const doneDaysSet = new Set();
-    const habitTasks = tasksByHabitDate[activeHabit.id] || {};
+    return Math.min(100, Math.round((xp / xpMax) * 100));
+  }, [activeHabit]);
 
-    Object.entries(habitTasks).forEach(([dateKey, dayTasks]) => {
-      const allCompleted = dayTasks.length > 0 && dayTasks.every((task) => task.completed);
-      if (allCompleted) {
-        doneDaysSet.add(dateKey);
-      }
-    });
+  const completedTodayTasks = todayTasks.filter((task) => task.completed).length;
+  const todayProgress = todayTasks.length
+    ? Math.round((completedTodayTasks / todayTasks.length) * 100)
+    : 0;
 
-    return {
-      doneDays: doneDaysSet.size,
-      totalDays: total,
-    };
-  }, [tasksByHabitDate, activeHabit]);
+  const ringRadius = 78;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const ringOffset =
+    ringCircumference - (Math.min(todayProgress, 100) / 100) * ringCircumference;
+
+  const persistTasksAndHabits = (nextTasks, nextHabits) => {
+    setTasksByHabitDate(nextTasks);
+    setCreatedHabits(nextHabits);
+    localStorage.setItem(
+      habitStorageKey("tasksByHabitDate"),
+      JSON.stringify(nextTasks)
+    );
+    localStorage.setItem(
+      habitStorageKey("createdHabits"),
+      JSON.stringify(nextHabits)
+    );
+    window.dispatchEvent(new Event("tasksUpdated"));
+    window.dispatchEvent(new Event("habitsUpdated"));
+    window.dispatchEvent(new Event("storage"));
+  };
 
   const completeTaskFromDashboard = (taskId) => {
     if (!activeHabit) return;
 
-    const currentHabitTasks = tasksByHabitDate[activeHabit.id] || {};
+    const hid = activeHabit.id;
+    const currentHabitTasks = tasksByHabitDate[hid] || {};
     const todayList = currentHabitTasks[todayKey] || [];
     const targetTask = todayList.find((task) => task.id === taskId);
 
@@ -179,7 +219,7 @@ export default function Dashboard() {
 
     const updatedTasksByHabitDate = {
       ...tasksByHabitDate,
-      [activeHabit.id]: {
+      [hid]: {
         ...currentHabitTasks,
         [todayKey]: todayList.map((task) =>
           task.id === taskId ? { ...task, completed: true } : task
@@ -188,7 +228,7 @@ export default function Dashboard() {
     };
 
     const updatedHabits = createdHabits.map((habit) => {
-      if (habit.id !== activeHabit.id) return habit;
+      if (String(habit.id) !== String(hid)) return habit;
 
       let newXp = Number(habit.xp || 0) + rewardXP;
       let newLevel = Number(habit.level || 1);
@@ -206,23 +246,10 @@ export default function Dashboard() {
       };
     });
 
-    setTasksByHabitDate(updatedTasksByHabitDate);
-    setCreatedHabits(updatedHabits);
-
-    localStorage.setItem(
-      habitStorageKey("tasksByHabitDate"),
-      JSON.stringify(updatedTasksByHabitDate)
-    );
-    localStorage.setItem(
-      habitStorageKey("createdHabits"),
-      JSON.stringify(updatedHabits)
-    );
-
-    window.dispatchEvent(new Event("tasksUpdated"));
-    window.dispatchEvent(new Event("habitsUpdated"));
+    persistTasksAndHabits(updatedTasksByHabitDate, updatedHabits);
 
     if (localStorage.getItem("accessToken")) {
-      const updated = updatedHabits.find((h) => h.id === activeHabit.id);
+      const updated = updatedHabits.find((h) => String(h.id) === String(hid));
       if (updated) {
         patchHabitOnServer(updated.id, {
           xp: updated.xp,
@@ -233,208 +260,123 @@ export default function Dashboard() {
     }
   };
 
-  const renderDashboardHome = () => {
-    if (!activeHabit) {
-      return (
-        <div className="dashboard-empty-card">
-          <h3>No goals yet</h3>
-          <p>Create your first goal in Add new.</p>
-        </div>
-      );
+  const handleDeleteTask = (taskId) => {
+    if (!activeHabit || !window.confirm(text.deleteTaskConfirm)) {
+      return;
     }
 
-    return (
-      <div className="main-dashboard-ui">
-        <div className="dashboard-top-row">
-          <div className="dashboard-character-card">
-            <img src={mascot} alt="Mascot" className="dashboard-mascot" />
-            <span className="dashboard-classic-badge">Classic</span>
-            <p className="dashboard-level-text">{activeHabit.level} Level</p>
-          </div>
-
-          <div className="dashboard-top-center">
-            <h1 className="dashboard-user-big-name">{userName}</h1>
-
-            <div className="dashboard-stats-row">
-              <div className="dashboard-stat-box">
-                <p>Completed Tasks</p>
-                <strong>{totalCompletedTasks}</strong>
-              </div>
-
-              <div className="dashboard-days-circle">
-                <svg viewBox="0 0 120 120" className="progress-ring">
-                  <circle cx="60" cy="60" r="48" className="ring-bg" />
-                  <circle
-                    cx="60"
-                    cy="60"
-                    r="48"
-                    className="ring-progress"
-                    strokeDasharray={`${(daysProgress.doneDays / daysProgress.totalDays) * 301.59} 301.59`}
-                  />
-                </svg>
-                <div className="dashboard-days-content">
-                  <span>Days</span>
-                  <strong>
-                    {daysProgress.doneDays}/{daysProgress.totalDays}
-                  </strong>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="dashboard-content-grid">
-          <div className="dashboard-active-goal-card">
-            <div className="dashboard-active-goal-top">
-              <div className="dashboard-goal-title-wrap">
-                <img src={mascot} alt="Goal mascot" className="goal-small-mascot" />
-                <div>
-                  <h3>{activeHabit.habitName}</h3>
-                  <p>{activeHabit.description || "No description"}</p>
-                </div>
-              </div>
-
-              <span className="active-status-pill">{activeHabit.status}</span>
-            </div>
-
-            <div className="dashboard-xp-row">
-              <span>XP</span>
-              <div className="dashboard-xp-bar">
-                <div
-                  className="dashboard-xp-fill"
-                  style={{
-                    width: `${(activeHabit.xp / activeHabit.xpMax) * 100}%`,
-                  }}
-                ></div>
-              </div>
-              <span>
-                {activeHabit.xp}/{activeHabit.xpMax}
-              </span>
-            </div>
-
-            <div className="tasks-for-today-box">
-              <h3>Tasks for today</h3>
-
-              {todayTasks.length === 0 ? (
-                <div className="dashboard-no-tasks">
-                  No tasks for today yet.
-                </div>
-              ) : (
-                todayTasks.map((task) => (
-                  <div key={task.id} className="dashboard-task-today-row">
-                    <div className="dashboard-task-left">
-                      <img
-                        src={mascot}
-                        alt="Task icon"
-                        className="task-mini-mascot"
-                      />
-                      <div>
-                        <p>{task.text}</p>
-                        <span>
-                          {task.startTime && task.endTime
-                            ? `${task.startTime} - ${task.endTime}`
-                            : task.time || "No time"}
-                        </span>
-                      </div>
-                    </div>
-
-                    <input
-                      type="checkbox"
-                      checked={task.completed}
-                      onChange={() => completeTaskFromDashboard(task.id)}
-                      disabled={task.completed}
-                      className="dashboard-task-checkbox"
-                    />
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="dashboard-other-goals">
-            <h2>Other goals</h2>
-
-            {otherGoals.length === 0 ? (
-              <div className="dashboard-no-tasks">No other goals yet.</div>
-            ) : (
-              otherGoals.map((goal) => {
-                const goalTasks = tasksByHabitDate[goal.id] || {};
-                const totalGoalDays = Object.keys(goalTasks).length || 21;
-
-                return (
-                  <div key={goal.id} className="other-goal-card">
-                    <div className="other-goal-left">
-                      <img src={mascot} alt="Goal mascot" className="goal-mini-icon" />
-                      <div>
-                        <h4>{goal.habitName}</h4>
-                        <p>{goal.description || "No description"}</p>
-
-                        <div className="other-goal-xp-row">
-                          <span>XP</span>
-                          <div className="other-goal-xp-bar">
-                            <div
-                              className="other-goal-xp-fill"
-                              style={{
-                                width: `${(goal.xp / goal.xpMax) * 100}%`,
-                              }}
-                            ></div>
-                          </div>
-                          <span>
-                            {goal.xp}/{goal.xpMax}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="other-goal-days-badge">
-                      <span>Days</span>
-                      <strong>{totalGoalDays}</strong>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      </div>
+    const hid = activeHabit.id;
+    const todayHabitTasks = { ...(tasksByHabitDate[hid] || {}) };
+    const nextTodayTasks = (todayHabitTasks[todayKey] || []).filter(
+      (task) => task.id !== taskId
     );
+
+    if (nextTodayTasks.length === 0) {
+      delete todayHabitTasks[todayKey];
+    } else {
+      todayHabitTasks[todayKey] = nextTodayTasks;
+    }
+
+    const nextTasksByHabitDate = { ...tasksByHabitDate };
+
+    if (Object.keys(todayHabitTasks).length === 0) {
+      delete nextTasksByHabitDate[hid];
+    } else {
+      nextTasksByHabitDate[hid] = todayHabitTasks;
+    }
+
+    setTasksByHabitDate(nextTasksByHabitDate);
+    localStorage.setItem(
+      habitStorageKey("tasksByHabitDate"),
+      JSON.stringify(nextTasksByHabitDate)
+    );
+    window.dispatchEvent(new Event("tasksUpdated"));
+    window.dispatchEvent(new Event("storage"));
+  };
+
+  const handleDeleteHabit = (habitId) => {
+    const habitToDelete = createdHabits.find(
+      (habit) => String(habit.id) === String(habitId)
+    );
+
+    if (!habitToDelete) {
+      return;
+    }
+
+    if (!window.confirm(text.deleteGoalConfirm)) {
+      return;
+    }
+
+    const nextHabits = createdHabits.filter(
+      (habit) => String(habit.id) !== String(habitId)
+    );
+    const nextTasksByHabitDate = { ...tasksByHabitDate };
+    delete nextTasksByHabitDate[habitId];
+
+    localStorage.setItem(
+      habitStorageKey("createdHabits"),
+      JSON.stringify(nextHabits)
+    );
+    localStorage.setItem(
+      habitStorageKey("tasksByHabitDate"),
+      JSON.stringify(nextTasksByHabitDate)
+    );
+
+    const nextActiveHabitId = nextHabits[0]?.id ?? "";
+    if (nextActiveHabitId !== "") {
+      localStorage.setItem(
+        habitStorageKey("activeHabitId"),
+        String(nextActiveHabitId)
+      );
+    } else {
+      localStorage.removeItem(habitStorageKey("activeHabitId"));
+    }
+
+    setCreatedHabits(nextHabits);
+    setTasksByHabitDate(nextTasksByHabitDate);
+    setActiveHabitId(nextActiveHabitId !== "" ? String(nextActiveHabitId) : "");
+
+    window.dispatchEvent(new Event("habitsUpdated"));
+    window.dispatchEvent(new Event("tasksUpdated"));
+    window.dispatchEvent(new Event("storage"));
   };
 
   return (
     <div className="dashboard">
       <aside className="sidebar">
-        <img src={logo} alt="SCOPOS logo" className="sidebar-logo" />
+        <img src={logo} alt="logo" className="sidebar-logo" />
 
         <ul className="menu">
           <li
             className={activeTab === "dashboard" ? "active-menu" : ""}
             onClick={() => setActiveTab("dashboard")}
           >
-            Dashboard
+            {text.dashboard}
           </li>
-
           <li
             className={activeTab === "tasks" ? "active-menu" : ""}
             onClick={() => setActiveTab("tasks")}
           >
-            Tasks
+            {text.tasks}
           </li>
-
-          <li className={activeTab === "statistics" ? "active-menu" : ""} onClick={() => setActiveTab("statistics")}> Statistic </li>
-
+          <li
+            className={activeTab === "statistics" ? "active-menu" : ""}
+            onClick={() => setActiveTab("statistics")}
+          >
+            {text.statistic}
+          </li>
           <li
             className={activeTab === "addnew" ? "active-menu" : ""}
             onClick={() => setActiveTab("addnew")}
           >
-            Add new
+            {text.addNew}
           </li>
-
-          <li className={activeTab === "community" ? "active-menu" : ""} onClick={() => {
-    setActiveTab("community");
-    setCommunityView("feed");
-  }}>
-Community
-</li>
+          <li
+            className={activeTab === "community" ? "active-menu" : ""}
+            onClick={() => setActiveTab("community")}
+          >
+            {text.community}
+          </li>
         </ul>
 
         <div className="bottom-menu">
@@ -442,54 +384,285 @@ Community
             className={activeTab === "settings" ? "active-menu" : ""}
             onClick={() => setActiveTab("settings")}
           >
-            Settings
+            {text.settings}
           </p>
-          <p
-            className="logout"
-            onClick={() => {
-              clearAuth();
-              navigate("/", { replace: true });
-            }}
-          >
-            Logout
+          <p className="logout" onClick={handleLogout}>
+            {text.logout}
           </p>
         </div>
       </aside>
 
       <main className="main">
-  {activeTab === "dashboard" && renderDashboardHome()}
-  {activeTab === "tasks" && <Tasks />}
-  {activeTab === "statistics" && <Statistics />}
-  {activeTab === "addnew" && <AddNew />}
-  {activeTab === "community" && <Community />}
-  {activeTab === "settings" && <Settings />}
-</main>
-
-      {activeTab !== "settings" && (
-        <aside className="profile-panel">
-          <p className="profile-title">Your Profile</p>
-
-          <div className="avatar-ring">
-            {avatar ? (
-              <img
-                src={avatar}
-                alt="Profile avatar"
-                className="avatar-circle avatar-img"
-              />
+        {activeTab === "dashboard" && (
+          <div className="main-dashboard-ui">
+            {!activeHabit ? (
+              <div className="dashboard-empty-card">
+                <h3>{text.noGoals}</h3>
+                <p>{text.createFirstGoal}</p>
+              </div>
             ) : (
-              <div className="avatar-circle"></div>
+              <>
+                <div className="dashboard-top-row">
+                  <div className="dashboard-character-card">
+                    <img src={mascot} alt="Mascot" className="dashboard-mascot" />
+                    <div className="dashboard-classic-badge">
+                      {activeHabit.category || text.goal}
+                    </div>
+                    <div className="dashboard-level-text">
+                      {text.level} {activeHabit.level || 1}
+                    </div>
+                  </div>
+
+                  <div className="dashboard-top-center">
+                    <h1 className="dashboard-user-big-name">{userName}</h1>
+
+                    <div className="dashboard-stats-row">
+                      <div className="dashboard-stat-box">
+                        <p>{text.completedTasks}</p>
+                        <strong>{totalCompletedTasks}</strong>
+                      </div>
+
+                      <div className="dashboard-stat-box">
+                        <p>{text.tasksForToday}</p>
+                        <strong>{todayTasks.length}</strong>
+                      </div>
+
+                      <div className="dashboard-days-circle">
+                        <svg className="progress-ring" viewBox="0 0 180 180">
+                          <circle className="ring-bg" cx="90" cy="90" r={ringRadius} />
+                          <circle
+                            className="ring-progress"
+                            cx="90"
+                            cy="90"
+                            r={ringRadius}
+                            strokeDasharray={ringCircumference}
+                            strokeDashoffset={ringOffset}
+                          />
+                        </svg>
+
+                        <div className="dashboard-days-content">
+                          <span>{text.today}</span>
+                          <strong>{todayProgress}%</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="dashboard-content-grid">
+                  <div className="dashboard-active-goal-card">
+                    <div className="dashboard-active-goal-top">
+                      <div className="dashboard-goal-title-wrap">
+                        <img src={mascot} alt="Goal" className="goal-small-mascot" />
+
+                        <div>
+                          <h3>{activeHabit.habitName}</h3>
+                          <p>
+                            {activeHabit.startDate} - {activeHabit.endDate}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="active-goal-actions">
+                        <button
+                          type="button"
+                          className="delete-goal-btn"
+                          onClick={() => handleDeleteHabit(activeHabit.id)}
+                        >
+                          {text.deleteGoal}
+                        </button>
+
+                        <div className="active-status-pill">
+                          {activeHabit.status || text.activeStatus}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="dashboard-xp-row">
+                      <span>
+                        XP: {Number(activeHabit.xp || 0)} /{" "}
+                        {Number(activeHabit.xpMax || 1000)}
+                      </span>
+                      <div className="dashboard-xp-bar">
+                        <div
+                          className="dashboard-xp-fill"
+                          style={{ width: `${currentHabitProgress}%` }}
+                        ></div>
+                      </div>
+                    </div>
+
+                    <div className="tasks-for-today-box">
+                      <h3>{text.tasksForToday}</h3>
+
+                      {todayTasks.length === 0 ? (
+                        <div className="dashboard-no-tasks">{text.noTasksToday}</div>
+                      ) : (
+                        todayTasks.map((task) => (
+                          <div key={task.id} className="dashboard-task-today-row">
+                            <div className="dashboard-task-left">
+                              <img
+                                src={mascot}
+                                alt=""
+                                className="task-mini-mascot"
+                                aria-hidden="true"
+                              />
+
+                              <div>
+                                <p>{task.text}</p>
+                                <span>
+                                  {task.startTime || "--:--"} - {task.endTime || "--:--"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="dashboard-task-actions">
+                              <button
+                                type="button"
+                                className={`dashboard-task-dot-right ${
+                                  task.completed ? "done" : ""
+                                }`}
+                                onClick={() => completeTaskFromDashboard(task.id)}
+                                disabled={task.completed}
+                                aria-label={task.completed ? "Done" : "Mark done"}
+                              />
+
+                              <button
+                                type="button"
+                                className="task-delete-btn task-delete-btn-soft"
+                                onClick={() => handleDeleteTask(task.id)}
+                              >
+                                {text.delete}
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="dashboard-other-goals">
+                    <h2>{text.otherGoals}</h2>
+
+                    {otherHabits.length === 0 ? (
+                      <div className="dashboard-no-tasks">{text.noOtherGoals}</div>
+                    ) : (
+                      otherHabits.map((habit) => {
+                        const habitProgress = Math.min(
+                          100,
+                          Math.round(
+                            (Number(habit.xp || 0) / Number(habit.xpMax || 1000)) * 100
+                          )
+                        );
+
+                        const end = new Date(habit.endDate);
+                        const now = new Date();
+                        end.setHours(23, 59, 59, 999);
+                        now.setHours(0, 0, 0, 0);
+                        const daysLeft = Math.max(
+                          Math.ceil((end - now) / (1000 * 60 * 60 * 24)),
+                          0
+                        );
+
+                        return (
+                          <div key={habit.id} className="other-goal-card">
+                            <div className="other-goal-left">
+                              <img
+                                src={mascot}
+                                alt=""
+                                className="goal-mini-icon"
+                                aria-hidden="true"
+                              />
+
+                              <div>
+                                <h4>{habit.habitName}</h4>
+                                <p>{habit.description || text.noDescription}</p>
+
+                                <div className="other-goal-xp-row">
+                                  <span>{habitProgress}%</span>
+                                  <div className="other-goal-xp-bar">
+                                    <div
+                                      className="other-goal-xp-fill"
+                                      style={{ width: `${habitProgress}%` }}
+                                    ></div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="other-goal-actions">
+                              <div className="other-goal-days-badge">
+                                <span>{text.days}</span>
+                                <strong>{daysLeft}</strong>
+                              </div>
+
+                              <button
+                                type="button"
+                                className="delete-goal-btn"
+                                onClick={() => handleDeleteHabit(habit.id)}
+                              >
+                                {text.delete}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </>
             )}
           </div>
+        )}
 
-          <p className="profile-name">Hi, {userName}!</p>
-          <p className="profile-text">
-            Continue Your Journey
-            <br />
-            And Achieve Your Target
-          </p>
+        {activeTab === "tasks" && <Tasks />}
+        {activeTab === "statistics" && <Statistics />}
+        {activeTab === "addnew" && <AddNew />}
+        {activeTab === "community" && <Community />}
+        {activeTab === "settings" && <AppSettings />}
+      </main>
 
-          <div className="profile-mini-btn">◔</div>
-        </aside>
+      <aside className="profile-panel">
+        <p className="profile-title">{text.yourProfile}</p>
+
+        <div
+          className="profile-avatar-wrapper"
+          onClick={() => setIsProfileSettingsOpen(true)}
+        >
+          {avatar ? (
+            <img src={avatar} alt="avatar" className="profile-avatar" />
+          ) : (
+            <div className="profile-avatar profile-avatar-fallback" aria-hidden="true">
+              {(userName || "T").charAt(0).toUpperCase()}
+            </div>
+          )}
+        </div>
+
+        <p className="profile-name">{userName}</p>
+
+        <p className="profile-desc">
+          {text.continueJourney}
+          <br />
+          {text.achieveTarget}
+        </p>
+      </aside>
+
+      {isProfileSettingsOpen && (
+        <div
+          className="settings-overlay"
+          onClick={() => setIsProfileSettingsOpen(false)}
+        >
+          <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="settings-close"
+              onClick={() => setIsProfileSettingsOpen(false)}
+            >
+              x
+            </button>
+
+            <ProfileSettings />
+          </div>
+        </div>
       )}
     </div>
   );

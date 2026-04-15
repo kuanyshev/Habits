@@ -6,6 +6,7 @@ import {
   habitStorageKey,
   mapServerHabitToLocal,
 } from "../api";
+import { t } from "../utils/appSettings";
 
 export default function AddNew() {
   const [category, setCategory] = useState("");
@@ -13,6 +14,8 @@ export default function AddNew() {
   const [description, setDescription] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+
+  const text = t();
 
   const categories = [
     "Fitness",
@@ -41,7 +44,7 @@ export default function AddNew() {
 
   const handleCreate = async () => {
     if (!category || !habitName.trim() || !startDate || !endDate) {
-      alert("Please fill all required fields");
+      alert(text.fillRequiredFields);
       return;
     }
 
@@ -55,7 +58,7 @@ export default function AddNew() {
       xp: 0,
       xpMax: 1000,
       level: 1,
-      status: "Active",
+      status: text.activeStatus,
       createdAt: new Date().toISOString(),
     };
 
@@ -92,21 +95,20 @@ export default function AddNew() {
     localStorage.setItem(habitStorageKey("activeHabitId"), newHabit.id);
     window.dispatchEvent(new Event("habitsUpdated"));
 
-    alert("Goal created successfully!");
+    alert(text.goalCreated);
     resetForm();
   };
+
   return (
     <div className="habit-card">
-      <h2 className="habit-title">Create new target</h2>
+      <h2 className="habit-title">{text.createNewTarget}</h2>
 
-      <p className="habit-subtitle">
-        Build a goal, set a deadline and complete tasks to level up.
-      </p>
+      <p className="habit-subtitle">{text.buildGoalSubtitle}</p>
 
       <div className="form-group">
-        <label>Category</label>
+        <label>{text.category}</label>
         <select value={category} onChange={(e) => setCategory(e.target.value)}>
-          <option value="">Choose category</option>
+          <option value="">{text.chooseCategory}</option>
           {categories.map((item) => (
             <option key={item} value={item}>
               {item}
@@ -116,7 +118,7 @@ export default function AddNew() {
       </div>
 
       <div className="form-group">
-        <label>Habit name</label>
+        <label>{text.habitName}</label>
         <input
           type="text"
           value={habitName}
@@ -125,7 +127,7 @@ export default function AddNew() {
       </div>
 
       <div className="form-group description-group">
-        <label>Description</label>
+        <label>{text.description}</label>
         <input
           type="text"
           value={description}
@@ -134,12 +136,12 @@ export default function AddNew() {
       </div>
 
       <div className="form-group">
-        <label>Define your own period</label>
+        <label>{text.definePeriod}</label>
 
         <div className="period-row">
           <div className="date-period-box">
             <div className="date-box">
-              <span>Start date</span>
+              <span>{text.startDate}</span>
               <input
                 type="date"
                 value={startDate}
@@ -148,7 +150,7 @@ export default function AddNew() {
             </div>
 
             <div className="date-box">
-              <span>End date</span>
+              <span>{text.endDate}</span>
               <input
                 type="date"
                 value={endDate}
@@ -158,14 +160,8 @@ export default function AddNew() {
           </div>
 
           <div className="tip-card">
-            <p>
-              On average, it takes 66 days to develop a habit, not the commonly
-              believed 21.
-            </p>
-            <p>
-              The actual time frame depends on the complexity of the action and
-              the individual.
-            </p>
+            <p>{text.habitTip1}</p>
+            <p>{text.habitTip2}</p>
           </div>
 
           <img src={mascot} alt="Mascot" className="period-mascot" />
@@ -174,10 +170,10 @@ export default function AddNew() {
 
       <div className="actions">
         <button className="cancel-btn" type="button" onClick={resetForm}>
-          Cancel
+          {text.cancel}
         </button>
         <button className="create-btn" type="button" onClick={handleCreate}>
-          Create
+          {text.create}
         </button>
       </div>
     </div>

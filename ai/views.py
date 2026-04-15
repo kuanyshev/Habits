@@ -52,7 +52,13 @@ def ai_chat_view(request):
 
     api_key = (getattr(settings, "GEMINI_API_KEY", None) or "").strip()
     if not api_key:
-        return Response({"error": "Gemini is not configured"}, status=503)
+        return Response(
+            {
+                "error": "Gemini is not configured",
+                "detail": "Set GEMINI_API_KEY (or GOOGLE_API_KEY) in the environment or in a .env file at the project root. See .env.example.",
+            },
+            status=503,
+        )
 
     ctx_block = _format_context(request.data.get("context"))
     # The user input is treated as optional extra goal details / notes.

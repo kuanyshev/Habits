@@ -1,6 +1,7 @@
 import "./Login.css";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
+import { toast } from "react-toastify";
 import logo from "../assets/logo.png";
 import { GoogleLogin } from "@react-oauth/google";
 import {
@@ -26,6 +27,7 @@ export default function Login() {
   const [googleUserForContinue, setGoogleUserForContinue] = useState(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [errors, setErrors] = useState({});
 
   const persistSession = (data) => {
     if (data.user?.id != null) {
@@ -33,11 +35,15 @@ export default function Login() {
     }
     if (data.access) localStorage.setItem("accessToken", data.access);
     if (data.refresh) localStorage.setItem("refreshToken", data.refresh);
-    if (data.user?.username) {
-      localStorage.setItem("userName", data.user.username);
+    const displayName = data.user?.nickname || data.user?.username;
+    if (displayName) {
+      localStorage.setItem("userName", displayName);
     }
     if (data.user?.id != null) {
       localStorage.setItem("userId", String(data.user.id));
+    }
+    if (data.user && typeof data.user === "object") {
+      localStorage.setItem("user", JSON.stringify(data.user));
     }
   };
 
@@ -49,55 +55,86 @@ export default function Login() {
     }
   };
 
+  const validateRegister = () => {
+    const newErrors = {};
+    if (!email.trim()) {
+      newErrors.email = "Email is required";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      newErrors.email = "Invalid email format";
+    }
+    if (!password.trim()) {
+      newErrors.password = "Password is required";
+    } else {
+      if (password.length < 6) {
+        newErrors.password = "Password must be at least 6 characters";
+      } else if (!/[A-Z]/.test(password)) {
+        newErrors.password =
+          "Password must contain at least one uppercase letter";
+      }
+    }
+    if (!username.trim()) {
+      newErrors.username = "Nickname is required";
+    }
+    if (!confirmPassword.trim()) {
+      newErrors.confirmPassword = "Please confirm your password";
+    } else if (password !== confirmPassword) {
+      newErrors.confirmPassword = "Passwords do not match";
+    }
+    setErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) {
+      toast.error("Please fix the errors");
+      return false;
+    }
+    return true;
+  };
+
   const handleSubmit = async () => {
     setError("");
     if (!password) {
       setError("Enter your password.");
+      toast.error("Enter your password.");
       return;
     }
     if (isLogin) {
       if (!loginEmail.trim()) {
         setError("Enter your email.");
+        toast.error("Enter your email.");
         return;
       }
       setLoading(true);
       try {
         const data = await loginRequest(loginEmail.trim(), password);
         persistSession(data);
+        toast.success("Login successful");
         postAuthNavigate(data.user);
       } catch (e) {
-        setError(e.message || "Login failed.");
+        const msg = e.message || "Login failed.";
+        setError(msg);
+        toast.error(msg);
       } finally {
         setLoading(false);
       }
       return;
     }
 
-    if (!username.trim()) {
-      setError("Choose a username.");
-      return;
-    }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
+    if (!validateRegister()) return;
+
     setLoading(true);
     try {
       clearAuth();
       await registerRequest({
-        username: username.trim(),
+        nickname: username.trim(),
         email: (email || "").trim(),
         password,
       });
-      const data = await loginRequest(username.trim(), password);
+      const data = await loginRequest((email || "").trim(), password);
       persistSession(data);
+      toast.success("Account created");
       postAuthNavigate(data.user);
     } catch (e) {
-      setError(e.message || "Registration failed.");
+      const msg = e.message || "Registration failed.";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -107,19 +144,24 @@ export default function Login() {
     setError("");
     if (newPassword.length < 6) {
       setError("Password must be at least 6 characters.");
+      toast.error("Password must be at least 6 characters.");
       return;
     }
     if (newPassword !== confirmNewPassword) {
       setError("Passwords do not match.");
+      toast.error("Passwords do not match.");
       return;
     }
     setLoading(true);
     try {
       await setPasswordRequest(newPassword);
       setNeedsPasswordSetup(false);
+      toast.success("Password saved");
       postAuthNavigate(googleUserForContinue);
     } catch (e) {
-      setError(e.message || "Failed to save password.");
+      const msg = e.message || "Failed to save password.";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -147,18 +189,24 @@ export default function Login() {
                     });
                     persistSession(data);
                     if (data.user?.has_password) {
+                      toast.success("Signed in with Google");
                       postAuthNavigate(data.user);
                     } else {
                       setGoogleUserForContinue(data.user || null);
                       setNeedsPasswordSetup(true);
                     }
                   } catch (e) {
-                    setError(e.message || "Google login failed.");
+                    const msg = e.message || "Google login failed.";
+                    setError(msg);
+                    toast.error(msg);
                   } finally {
                     setLoading(false);
                   }
                 }}
-                onError={() => setError("Google login failed.")}
+                onError={() => {
+                  setError("Google login failed.");
+                  toast.error("Google login failed.");
+                }}
                 useOneTap={false}
               />
             </div>
@@ -174,43 +222,68 @@ export default function Login() {
 
         <div className="auth-form">
           <input
-            className="auth-input"
+            className={`auth-input ${!isLogin && errors.username ? "input-error" : ""}`}
             type={isLogin ? "email" : "text"}
-            placeholder={isLogin ? "Email" : "Username"}
+            placeholder={isLogin ? "Email" : "Nickname"}
             value={isLogin ? loginEmail : username}
-            onChange={(e) => (isLogin ? setLoginEmail(e.target.value) : setUsername(e.target.value))}
+            onChange={(e) =>
+              isLogin ? setLoginEmail(e.target.value) : setUsername(e.target.value)
+            }
             autoComplete={isLogin ? "email" : "username"}
           />
+          {!isLogin && errors.username && (
+            <p className="error-text">{errors.username}</p>
+          )}
 
           {!isLogin && (
-            <input
-              className="auth-input"
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-            />
+            <>
+              <input
+                className={`auth-input ${errors.email ? "input-error" : ""}`}
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setErrors((prev) => ({ ...prev, email: "" }));
+                }}
+                autoComplete="email"
+              />
+              {errors.email && <p className="error-text">{errors.email}</p>}
+            </>
           )}
 
           <input
-            className="auth-input"
+            className={`auth-input ${!isLogin && errors.password ? "input-error" : ""}`}
             type="password"
             placeholder="Password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setErrors((prev) => ({ ...prev, password: "" }));
+            }}
             autoComplete={isLogin ? "current-password" : "new-password"}
           />
+          {!isLogin && errors.password && (
+            <p className="error-text">{errors.password}</p>
+          )}
 
           {!isLogin && (
-            <input
-              className="auth-input"
-              type="password"
-              placeholder="Confirm password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              autoComplete="new-password"
-            />
+            <>
+              <input
+                className={`auth-input ${errors.confirmPassword ? "input-error" : ""}`}
+                type="password"
+                placeholder="Confirm password"
+                value={confirmPassword}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value);
+                  setErrors((prev) => ({ ...prev, confirmPassword: "" }));
+                }}
+                autoComplete="new-password"
+              />
+              {errors.confirmPassword && (
+                <p className="error-text">{errors.confirmPassword}</p>
+              )}
+            </>
           )}
 
           {needsPasswordSetup && (
@@ -244,7 +317,9 @@ export default function Login() {
 
           {isLogin && (
             <div className="forgot-row">
-              <span>Forgot a password?</span>
+              <span onClick={() => navigate("/forgot-password")}>
+                Forgot your password?
+              </span>
             </div>
           )}
 
@@ -272,6 +347,7 @@ export default function Login() {
             onClick={() => {
               setIsLogin(!isLogin);
               setError("");
+              setErrors({});
             }}
           >
             {isLogin ? "Register" : "Log in"}

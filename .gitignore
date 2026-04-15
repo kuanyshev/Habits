@@ -1,7 +1,17 @@
 venv/
+.venv/
 __pycache__/
 *.pyc
 db.sqlite3
 .env
 node_modules/
 .DS_Store
+
+# Frontend build artifacts
+frontend/build/
+
+# CRA/Vite envs (examples are ok)
+frontend/.env
+
+# Optional: old source snapshot (keep if you want it committed)
+frontend/scopos-main/

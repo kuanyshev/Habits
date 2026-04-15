@@ -53,7 +53,7 @@ export default function Friends({ onBack, onOpenProfile }) {
         ) : friends.length === 0 ? (
           <div className="community-empty-card">
             <h3>No friends yet</h3>
-            <p>Search by email in Community and subscribe; ask them to subscribe back.</p>
+            <p>Search by nickname in Community and subscribe; ask them to subscribe back.</p>
           </div>
         ) : (
           friends.map((friend) => (
@@ -65,10 +65,10 @@ export default function Friends({ onBack, onOpenProfile }) {
               >
                 <div className="community-post-user">
                   <div className="community-avatar-circle">
-                    {(friend.username || "?").charAt(0).toUpperCase()}
+                    {(friend.nickname || friend.username || "?").charAt(0).toUpperCase()}
                   </div>
                   <div>
-                    <strong>{friend.username}</strong>
+                    <strong>{friend.nickname || friend.username}</strong>
                     <p>
                       Level {friend.level} · XP {friend.xp}
                     </p>
@@ -87,7 +87,9 @@ export default function Friends({ onBack, onOpenProfile }) {
                 <button
                   type="button"
                   className="community-danger-btn"
-                  onClick={() => unfriend(friend.id, friend.username)}
+                  onClick={() =>
+                    unfriend(friend.id, friend.nickname || friend.username)
+                  }
                 >
                   Unfriend
                 </button>

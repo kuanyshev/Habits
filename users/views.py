@@ -13,29 +13,10 @@ from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 
 from .serializers import RegisterSerializer, UserSerializer
+from .utils import make_unique_nickname, make_unique_username
 
 
 User = get_user_model()
-
-
-def _make_unique_username(base: str) -> str:
-    candidate = (base or "user").strip().lower()
-    candidate = "".join(ch for ch in candidate if ch.isalnum() or ch in "._-")
-    if not candidate:
-        candidate = "user"
-    candidate = candidate[:150]
-
-    if not User.objects.filter(username=candidate).exists():
-        return candidate
-
-    idx = 1
-    while True:
-        suffix = f"_{idx}"
-        trimmed = candidate[: 150 - len(suffix)]
-        next_candidate = f"{trimmed}{suffix}"
-        if not User.objects.filter(username=next_candidate).exists():
-            return next_candidate
-        idx += 1
 
 
 class RegisterView(generics.CreateAPIView):
@@ -56,6 +37,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def get_token(cls, user):
         token = super().get_token(user)
         token["username"] = user.username
+        token["nickname"] = getattr(user, "nickname", "") or user.username
         token["xp"] = user.xp
         token["level"] = user.level
         return token
@@ -135,10 +117,22 @@ class GoogleLoginView(APIView):
         default_base = email.split("@")[0]
         if info.get("sub"):
             default_base = f"{default_base}_{str(info.get('sub'))[:8]}"
-        username_for_new_user = _make_unique_username(requested_username or default_base)
+        username_for_new_user = make_unique_username(requested_username or default_base)
+
+        display_name = (info.get("name") or "").strip()
+        if not display_name:
+            given = (info.get("given_name") or "").strip()
+            family = (info.get("family_name") or "").strip()
+            display_name = f"{given} {family}".strip()
+        if not display_name:
+            display_name = email.split("@")[0]
+        nick_for_new = make_unique_nickname(display_name[:64])
 
         # Create or get local user by email (unique), then optionally set local creds.
-        user, created = User.objects.get_or_create(email=email, defaults={"username": username_for_new_user})
+        user, created = User.objects.get_or_create(
+            email=email,
+            defaults={"username": username_for_new_user, "nickname": nick_for_new},
+        )
 
         if created and requested_password and len(requested_password) < 6:
             return Response(

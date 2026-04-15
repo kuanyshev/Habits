@@ -1,53 +1,59 @@
 import { useEffect, useMemo, useState } from "react";
 import "./Dashboard.css";
 import { habitStorageKey, sendAiMessage } from "../api";
+import { getLocale, readStoredJson, t } from "../utils/appSettings";
 
 export default function Tasks() {
   const [habits, setHabits] = useState([]);
   const [activeHabitId, setActiveHabitId] = useState(
     localStorage.getItem(habitStorageKey("activeHabitId")) || ""
   );
-
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
-
   const [inputValue, setInputValue] = useState("");
   const [taskStartTime, setTaskStartTime] = useState("");
   const [taskEndTime, setTaskEndTime] = useState("");
-
   const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+
+  const text = t();
+  const locale = getLocale();
+
   const [aiMessages, setAiMessages] = useState([
     {
       role: "ai",
-      text: "Write your goal and I will suggest tasks for the selected day.",
+      text: text.writeGoalAi,
     },
   ]);
 
-  const [tasksByHabitDate, setTasksByHabitDate] = useState(() => {
-    const saved = localStorage.getItem(habitStorageKey("tasksByHabitDate"));
-    return saved ? JSON.parse(saved) : {};
-  });
+  const [tasksByHabitDate, setTasksByHabitDate] = useState(() =>
+    readStoredJson(habitStorageKey("tasksByHabitDate"), {})
+  );
+
+  useEffect(() => {
+    setAiMessages([{ role: "ai", text: text.writeGoalAi }]);
+  }, [text.writeGoalAi]);
 
   useEffect(() => {
     const loadHabits = () => {
-      const savedHabits =
-        JSON.parse(localStorage.getItem(habitStorageKey("createdHabits"))) || [];
+      const savedHabits = readStoredJson(habitStorageKey("createdHabits"), []);
       const savedActiveId =
         localStorage.getItem(habitStorageKey("activeHabitId")) || "";
 
       setHabits(savedHabits);
 
       if (savedHabits.length > 0) {
-        const validHabit = savedHabits.find((habit) => habit.id === savedActiveId);
+        const validHabit = savedHabits.find(
+          (habit) => String(habit.id) === String(savedActiveId)
+        );
 
         if (validHabit) {
-          setActiveHabitId(savedActiveId);
+          setActiveHabitId(String(savedActiveId));
         } else {
-          setActiveHabitId(savedHabits[0].id);
+          setActiveHabitId(String(savedHabits[0].id));
           localStorage.setItem(
             habitStorageKey("activeHabitId"),
-            savedHabits[0].id
+            String(savedHabits[0].id)
           );
         }
       } else {
@@ -89,9 +95,8 @@ export default function Tasks() {
   };
 
   const selectedKey = getDateKey(selectedDate);
-
   const activeHabit =
-    habits.find((habit) => habit.id === activeHabitId) || null;
+    habits.find((habit) => String(habit.id) === String(activeHabitId)) || null;
 
   const tasks = ((tasksByHabitDate[activeHabitId] || {})[selectedKey] || []).slice()
     .sort((a, b) => {
@@ -100,27 +105,31 @@ export default function Tasks() {
       return aTime.localeCompare(bTime);
     });
 
-  const monthLabel = currentDate.toLocaleString("en-US", {
+  const monthLabel = currentDate.toLocaleString(locale, {
     month: "long",
     year: "numeric",
   });
 
-  const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const daysOfWeek = useMemo(() => {
+    const start = new Date(2026, 0, 4);
+    return Array.from({ length: 7 }, (_, index) =>
+      new Intl.DateTimeFormat(locale, { weekday: "short" }).format(
+        new Date(start.getFullYear(), start.getMonth(), start.getDate() + index)
+      )
+    );
+  }, [locale]);
 
   const calendarDays = useMemo(() => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
-
     const firstDayOfMonth = new Date(year, month, 1);
     const lastDayOfMonth = new Date(year, month + 1, 0);
-
     const startWeekDay = firstDayOfMonth.getDay();
     const totalDaysInMonth = lastDayOfMonth.getDate();
     const prevMonthLastDay = new Date(year, month, 0).getDate();
-
     const days = [];
 
-    for (let i = startWeekDay - 1; i >= 0; i--) {
+    for (let i = startWeekDay - 1; i >= 0; i -= 1) {
       days.push({
         date: new Date(year, month - 1, prevMonthLastDay - i),
         currentMonth: false,
@@ -177,27 +186,27 @@ export default function Tasks() {
 
   const handleAddTask = () => {
     if (!activeHabitId) {
-      alert("First create a goal");
+      alert(text.firstCreateGoal);
       return;
     }
 
     if (!activeHabit) {
-      alert("No active goal");
+      alert(text.noActiveGoal);
       return;
     }
 
     if (!inputValue.trim() || !taskStartTime || !taskEndTime) {
-      alert("Fill task and time");
+      alert(text.fillTaskAndTime);
       return;
     }
 
     if (taskEndTime <= taskStartTime) {
-      alert("End time must be later than start time");
+      alert(text.endTimeLater);
       return;
     }
 
     if (selectedKey < activeHabit.startDate || selectedKey > activeHabit.endDate) {
-      alert("Task date must be inside the goal period");
+      alert(text.taskDateInsideGoal);
       return;
     }
 
@@ -228,10 +237,8 @@ export default function Tasks() {
       habitStorageKey("tasksByHabitDate"),
       JSON.stringify(updatedTasksByHabitDate)
     );
-
     window.dispatchEvent(new Event("tasksUpdated"));
     window.dispatchEvent(new Event("habitsUpdated"));
-
     setInputValue("");
     setTaskStartTime("");
     setTaskEndTime("");
@@ -239,19 +246,19 @@ export default function Tasks() {
 
   const handleGenerateAi = async () => {
     if (!activeHabitId) {
-      alert("First create a goal in Add new");
+      alert(text.firstCreateGoal);
       return;
     }
 
     if (!activeHabit) {
-      alert("No active goal");
+      alert(text.noActiveGoal);
       return;
     }
 
     if (!aiInput.trim() || aiLoading) return;
 
     if (selectedKey < activeHabit.startDate || selectedKey > activeHabit.endDate) {
-      alert("Task date must be inside the goal period");
+      alert(text.taskDateInsideGoal);
       return;
     }
 
@@ -260,23 +267,23 @@ export default function Tasks() {
       return;
     }
 
-    const text = aiInput.trim();
-    const userMessage = { role: "user", text };
+    const msg = aiInput.trim();
+    const userMessage = { role: "user", text: msg };
     setAiMessages((prev) => [...prev, userMessage]);
     setAiInput("");
     setAiLoading(true);
 
     try {
-      const data = await sendAiMessage(text, {
+      const data = await sendAiMessage(msg, {
         habitName: activeHabit.habitName,
         habitDescription: activeHabit.description || "",
         goalStartDate: activeHabit.startDate,
         goalEndDate: activeHabit.endDate,
         selectedDate: selectedKey,
-        existingTasks: tasks.map((t) => ({
-          text: t.text,
-          startTime: t.startTime,
-          endTime: t.endTime,
+        existingTasks: tasks.map((tk) => ({
+          text: tk.text,
+          startTime: tk.startTime,
+          endTime: tk.endTime,
         })),
       });
       const reply = data?.reply ?? "";
@@ -291,11 +298,44 @@ export default function Tasks() {
     }
   };
 
+  const handleDeleteTask = (taskId) => {
+    if (!window.confirm(text.deleteTaskConfirm)) {
+      return;
+    }
+
+    const nextHabitTasks = { ...(tasksByHabitDate[activeHabitId] || {}) };
+    const nextDayTasks = (nextHabitTasks[selectedKey] || []).filter(
+      (task) => task.id !== taskId
+    );
+
+    if (nextDayTasks.length === 0) {
+      delete nextHabitTasks[selectedKey];
+    } else {
+      nextHabitTasks[selectedKey] = nextDayTasks;
+    }
+
+    const nextTasksByHabitDate = { ...tasksByHabitDate };
+
+    if (Object.keys(nextHabitTasks).length === 0) {
+      delete nextTasksByHabitDate[activeHabitId];
+    } else {
+      nextTasksByHabitDate[activeHabitId] = nextHabitTasks;
+    }
+
+    setTasksByHabitDate(nextTasksByHabitDate);
+    localStorage.setItem(
+      habitStorageKey("tasksByHabitDate"),
+      JSON.stringify(nextTasksByHabitDate)
+    );
+    window.dispatchEvent(new Event("tasksUpdated"));
+    window.dispatchEvent(new Event("storage"));
+  };
+
   if (!activeHabit) {
     return (
       <div className="dashboard-empty-card">
-        <h3>No active goal</h3>
-        <p>Create a goal in Add new first.</p>
+        <h3>{text.noActiveGoal}</h3>
+        <p>{text.createGoalFirst}</p>
       </div>
     );
   }
@@ -324,7 +364,7 @@ export default function Tasks() {
           className="tasks-month-arrow"
           onClick={handlePrevMonth}
         >
-          ‹
+          {'<'}
         </button>
 
         <span>{monthLabel}</span>
@@ -334,7 +374,7 @@ export default function Tasks() {
           className="tasks-month-arrow"
           onClick={handleNextMonth}
         >
-          ›
+          {'>'}
         </button>
       </div>
 
@@ -351,17 +391,13 @@ export default function Tasks() {
           {calendarDays.map(({ date, currentMonth }) => {
             const isSelected = isSameDate(date, selectedDate);
             const hasTasks =
-              ((tasksByHabitDate[activeHabitId] || {})[getDateKey(date)] || [])
-                .length > 0;
+              ((tasksByHabitDate[activeHabitId] || {})[getDateKey(date)] || []).length > 0;
 
             return (
               <button
                 key={`${activeHabitId}-${getDateKey(date)}`}
                 type="button"
-                className={`calendar-day-cell
-                  ${currentMonth ? "current-month" : "other-month"}
-                  ${isSelected ? "selected-day" : ""}
-                `}
+                className={`calendar-day-cell ${currentMonth ? "current-month" : "other-month"} ${isSelected ? "selected-day" : ""}`}
                 onClick={() => handleDayClick(date)}
               >
                 <span className="calendar-day-number">{date.getDate()}</span>
@@ -372,26 +408,34 @@ export default function Tasks() {
         </div>
       </div>
 
-      <div className="selected-date-label">Selected date: {selectedKey}</div>
+      <div className="selected-date-label">{text.selectedDate}: {selectedKey}</div>
 
       <div className="tasks-main-layout">
         <div className="tasks-left-column">
           <div className="tasks-list-box">
             {tasks.length === 0 ? (
-              <div className="dashboard-no-tasks">
-                No tasks for this date yet.
-              </div>
+              <div className="dashboard-no-tasks">{text.noTasksForDate}</div>
             ) : (
               tasks.map((task) => (
                 <div key={task.id} className="task-row-card">
-                  <div className="task-check empty-box"></div>
+                  <div className="task-row-main">
+                    <div className="task-check empty-box"></div>
 
-                  <div className="task-info-block">
-                    <p className="task-name">{task.text}</p>
-                    <span className="task-time-label">
-                      {task.startTime} - {task.endTime}
-                    </span>
+                    <div className="task-info-block">
+                      <p className="task-name">{task.text}</p>
+                      <span className="task-time-label">
+                        {task.startTime} - {task.endTime}
+                      </span>
+                    </div>
                   </div>
+
+                  <button
+                    type="button"
+                    className="task-delete-btn task-delete-btn-soft"
+                    onClick={() => handleDeleteTask(task.id)}
+                  >
+                    {text.delete}
+                  </button>
                 </div>
               ))
             )}
@@ -402,7 +446,7 @@ export default function Tasks() {
 
                 <input
                   type="text"
-                  placeholder="Write the task"
+                  placeholder={text.writeTask}
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   className="task-write-input"
@@ -410,7 +454,7 @@ export default function Tasks() {
               </div>
 
               <div className="task-time-row">
-                <span>Choose time</span>
+                <span>{text.chooseTime}</span>
 
                 <input
                   type="time"
@@ -431,7 +475,7 @@ export default function Tasks() {
                   className="task-add-submit-btn"
                   onClick={handleAddTask}
                 >
-                  Add task
+                  {text.addTask}
                 </button>
               </div>
             </div>
@@ -443,9 +487,7 @@ export default function Tasks() {
             {aiMessages.map((message, index) => (
               <div
                 key={index}
-                className={`tasks-ai-message ${
-                  message.role === "user" ? "user" : "ai"
-                }`}
+                className={`tasks-ai-message ${message.role === "user" ? "user" : "ai"}`}
               >
                 {message.text}
               </div>
@@ -455,13 +497,13 @@ export default function Tasks() {
           <div className="tasks-ai-bottom">
             <div className="tasks-ai-actions-left">
               <button type="button">+</button>
-              <button type="button">◉</button>
-              <button type="button">✦</button>
+              <button type="button">[]</button>
+              <button type="button">*</button>
             </div>
 
             <input
               type="text"
-              placeholder="Write your goal"
+              placeholder={text.writeYourGoal}
               value={aiInput}
               onChange={(e) => setAiInput(e.target.value)}
               className="tasks-ai-input"
@@ -477,7 +519,7 @@ export default function Tasks() {
               onClick={handleGenerateAi}
               disabled={aiLoading}
             >
-              {aiLoading ? "…" : "Generate with AI"}
+              {aiLoading ? "…" : text.generateWithAi}
             </button>
           </div>
         </div>

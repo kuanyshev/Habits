@@ -79,6 +79,7 @@ export function clearAuth() {
   localStorage.removeItem("refreshToken");
   localStorage.removeItem("userId");
   localStorage.removeItem("userName");
+  localStorage.removeItem("user");
 }
 
 /** Call after login when user id changes so old unscoped cache is not reused. */
@@ -198,9 +199,10 @@ export async function sendAiMessage(message, context = null) {
 
 /* --- Community (друзья по взаимной подписке, посты только у друзей + свои) --- */
 
-export async function communitySearchByEmail(email) {
-  const q = encodeURIComponent(email.trim());
-  return fetchJson(`/api/community/search/?email=${q}`);
+/** Поиск пользователя по никнейму (точное совпадение, без учёта регистра на бэкенде). */
+export async function communitySearchByNickname(nickname) {
+  const q = encodeURIComponent(nickname.trim());
+  return fetchJson(`/api/community/search/?nickname=${q}`);
 }
 
 export async function communitySubscribe(userId) {
